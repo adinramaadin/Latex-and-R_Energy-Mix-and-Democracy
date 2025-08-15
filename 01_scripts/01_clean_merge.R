@@ -166,4 +166,56 @@ merged_data <- energy_shares %>%
             by = c("code", "year"))
 
 
-saveRDS(merged_data, "00_data/merged_data.rds")
+# Create single country name from all the country columns
+merged_data <- merged_data %>%
+  mutate(
+    # Take first non-missing country name from any column
+    country = coalesce(country.x, country.y, country.x.x, country.y.y, country.x.x.x, country.y.y.y)
+  )
+
+cleaned_data <- merged_data %>%
+  select(
+    # === IDENTIFIERS ===
+    country,
+    country_code = code,
+    year,
+    
+    # === DEPENDENT VARIABLES (Energy Shares) ===
+    solar_share,
+    wind_share, 
+    hydro_share,
+    nuclear_share,
+    renewable_share,
+    lowcarbon_share,
+    total_electricity,
+    
+    # === TREATMENT VARIABLES (Crisis) ===
+    any_crisis,
+    banking_crisis,
+    currency_crisis, 
+    debt_crisis,
+    
+    # === KEY INDEPENDENT VARIABLES ===
+    # Economic development
+    rgpd_pc,
+    
+    # Democracy measures
+    electoral,
+    liberal,
+    participatory, 
+    deliberative,
+    egalitarian,
+    
+    # Economic structure
+    manufacturing_share = manu_share,
+    services_share = service_share,
+    
+    # Trade and resources
+    trade_openness = trade_opennes,
+    exports_gdp = export,
+    imports_gdp = import,
+    fossil_rents = resource_rev
+  )
+
+
+saveRDS(cleaned_data, "00_data/cleaned_data.rds")
