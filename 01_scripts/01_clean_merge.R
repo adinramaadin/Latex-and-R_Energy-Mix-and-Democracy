@@ -217,5 +217,4 @@ cleaned_data <- merged_data %>%
     fossil_rents = resource_rev
   )
 
-
-saveRDS(cleaned_data, "00_data/cleaned_data.rds")
+write_csv(cleaned_data, "00_data/cleaned_data.csv")
