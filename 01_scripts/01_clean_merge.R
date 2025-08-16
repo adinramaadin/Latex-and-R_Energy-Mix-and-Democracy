@@ -4,7 +4,7 @@ library(ggplot2)
 library(haven)
 library(readr)
 library(haven)
-
+library(readxl)
 
 # 1. IMPORT DATA
 globalmacro <- read_dta("00_data/globalmacro.dta") %>% 
@@ -50,9 +50,8 @@ manufacture <- read_csv("00_data/manufacturing_shar.csv") %>%
          year = 'Year',
          manu_share = `Manufacturing, value added (% of GDP)`)
 
-service <- read_csv("00_data/service_shar.csv", 
-                    skip = 3) %>% 
-  pivot_longer(cols = 5:ncol(.), 
+service <- read_csv("00_data/service_shar.csv") %>% 
+  pivot_longer(cols = `1960`:`2024`, 
                names_to = "year",
                values_to = "service_share"
   ) %>% 
@@ -62,7 +61,7 @@ service <- read_csv("00_data/service_shar.csv",
     year,
     service_share
   ) 
-  
+ 
 democracy <- readRDS("00_data/vdem_r.rds") %>% 
   select(country = country_name, 
           code = country_text_id,
@@ -73,7 +72,21 @@ democracy <- readRDS("00_data/vdem_r.rds") %>%
           deliberative = v2x_delibdem,
           egalitarian = v2x_egaldem
   )
-income_clas <- 
+
+inc <- read_excel("00_data/kekayaan.xlsx") %>% 
+  pivot_longer(cols = 3:ncol(.),
+               names_to = "year",
+               values_to = "inc_level") %>% 
+  mutate(year = as.numeric(year),
+         inc_level = recode(
+           inc_level,
+           "L"  = "low_income",
+           "LM" = "lower_middle_income",
+           "UM" = "upper_middle_income",
+           "H"  = "high_income"
+           )
+         ) 
+
 
 glimpse(globalmacro)
 glimpse(energy_cons)
@@ -81,9 +94,12 @@ glimpse(govrevenue)
 glimpse(manufacture)
 glimpse(service)
 glimpse(democracy)
-
+glimpse(inc)
 
 # 1. Data Cleaning First
+globalmacro <- globalmacro %>% 
+  mutate(year = as.numeric(year))
+
 democracy <- democracy %>%
   filter(!is.na(code)) 
 
@@ -99,33 +115,38 @@ govrevenue <- govrevenue  %>%
 manufacture <- manufacture %>% 
   filter(!is.na(code))
 
-service <- service %>%
-  mutate(year = as.numeric(year)) %>% 
-  filter(!is.na(year), !is.na(code))
+service <- service %>% 
+  filter(!is.na(year), !is.na(code)) %>% 
+  mutate(year = as.numeric(year))
   
+inc <- inc %>% 
+  filter(!is.na(year), !is.na(code))
 
-
-# 3. Create Energy Shares (Your Dependent Variables)
-energy_shares <- energy_cons %>%
+  # Calculate total electricity generation
+  energy_shares <- energy_cons %>%
   # Calculate total electricity generation
   mutate(
     total_electricity = other_renewables_twh + biofuels_twh + solar_twh + 
       wind_twh + hydro_twh + nuclear_twh + 
       gas_twh + coal_twh + oil_twh
   ) %>%
-  # Calculate renewable shares (%)
+  # Calculate shares (%)
   mutate(
-    solar_share = (solar_twh / total_electricity) * 100,
-    wind_share = (wind_twh / total_electricity) * 100,
-    hydro_share = (hydro_twh / total_electricity) * 100,
-    nuclear_share = (nuclear_twh / total_electricity) * 100,
+    solar_share    = (solar_twh / total_electricity) * 100,
+    wind_share     = (wind_twh / total_electricity) * 100,
+    hydro_share    = (hydro_twh / total_electricity) * 100,
+    nuclear_share  = (nuclear_twh / total_electricity) * 100,
+    coal_share     = (coal_twh / total_electricity) * 100,
+    gas_share      = (gas_twh / total_electricity) * 100,
+    oil_share      = (oil_twh / total_electricity) * 100,
     renewable_share = ((solar_twh + wind_twh + hydro_twh + other_renewables_twh + biofuels_twh) / total_electricity) * 100,
-    lowcarbon_share = ((solar_twh + wind_twh + hydro_twh + nuclear_twh + other_renewables_twh + biofuels_twh) / total_electricity) * 100
+    lowcarbon_share = ((solar_twh + wind_twh + hydro_twh + nuclear_twh + other_renewables_twh + biofuels_twh) / total_electricity) * 100,
+    fosil_share     = ((coal_twh + gas_twh + oil_twh) / total_electricity) * 100
   ) %>%
   # Keep only necessary variables
   select(country, code, year, solar_share, wind_share, hydro_share, nuclear_share, 
+         coal_share, gas_share, oil_share, fosil_share,
          renewable_share, lowcarbon_share, total_electricity)
-
 
 # 4. Create Crisis Variables
 crisis_data <- globalmacro %>%
@@ -141,85 +162,57 @@ crisis_data <- globalmacro %>%
     currency_crisis = ifelse(!is.na(currencycrisis), currencycrisis, 0),
     debt_crisis = ifelse(!is.na(sovdebtcrisis), sovdebtcrisis, 0)
   ) %>%
-  select(country, code, year, rgpd_pc, export, import, trade_opennes, 
-         any_crisis, banking_crisis, currency_crisis, debt_crisis, population)
+  select(country, code, year, rgpd_pc, population, export, import, trade_opennes, 
+         any_crisis, banking_crisis, currency_crisis, debt_crisis)
 
 # 5. Sequential Left Joins (Starting with Energy as Base)
-# Start with energy data (your main dependent variable)
-merged_data <- energy_shares %>%
+# Start with crisis_data 
+merged_data <- crisis_data %>%
   # Join macro/crisis data
-  left_join(crisis_data, by = c("code", "year")) %>%
-  
+  left_join(energy_shares, by = c("code", "year")) %>% 
+
   # Join democracy data  
-  left_join(democracy %>% select(country, code, year, electoral, liberal, participatory, deliberative, egalitarian), 
-            by = c("code", "year")) %>%
-  
+  left_join(democracy, by = c("code", "year")) %>% 
+
   # Join government revenue (fossil rents proxy)
-  left_join(govrevenue %>% select(country, code, year, resource_rev), 
-            by = c("code", "year")) %>%
+  left_join(govrevenue, by = c("code", "year")) %>%
   
   # Join manufacturing share
-  left_join(manufacture %>% select(country, code, year, manu_share), 
-            by = c("code", "year")) %>%
+  left_join(manufacture, by = c("code", "year")) %>%
   
   # Join services share
-  left_join(service %>% select(country, code, year, service_share), 
-            by = c("code", "year"))
+  left_join(service, by = c("code", "year")) %>% 
+  
+  #join inc level data
+  left_join(inc, by =c("code", "year"))
 
+nrow(crisis_data)
+nrow(energy_shares)
+nrow(merged_data)
 
-# Create single country name from all the country columns
+glimpse(merged_data)
+
+#delete repetitive columns
+merged_data <- merged_data %>% 
+  select(-country) %>%                         # 1. drop plain country
+  rename(country = country.x) %>%              # 2. keep country.x
+  select(-matches("^country\\..*"))            # 3. drop all suffixed variants
+
 merged_data <- merged_data %>%
-  mutate(
-    # Take first non-missing country name from any column
-    country = coalesce(country.x, country.y, country.x.x, country.y.y, country.x.x.x, country.y.y.y)
-  )
+  group_by(country) %>%
+  arrange(year, .by_group = TRUE) %>%
+  fill(inc_level, .direction = "downup") %>%  # fill backward first, then forward
+  mutate(inc_level = ifelse(is.na(inc_level), "0", inc_level)) %>%
+  ungroup() %>% 
+  mutate(inc_level = factor(inc_level, 
+                            levels = c("low_income",
+                                       "lower_middle_income",
+                                       "upper_middle_income",
+                                       "high_income"),
+                            ordered = TRUE))
 
-cleaned_data <- merged_data %>%
-  select(
-    # === IDENTIFIERS ===
-    country,
-    country_code = code,
-    year,
-    
-    # === DEPENDENT VARIABLES (Energy Shares) ===
-    solar_share,
-    wind_share, 
-    hydro_share,
-    nuclear_share,
-    renewable_share,
-    lowcarbon_share,
-    total_electricity,
-    
-    # === TREATMENT VARIABLES (Crisis) ===
-    any_crisis,
-    banking_crisis,
-    currency_crisis, 
-    debt_crisis,
-    
-    # === KEY INDEPENDENT VARIABLES ===
-    # Economic development
-    rgpd_pc,
-    population,
-    
-    # Democracy measures
-    electoral,
-    liberal,
-    participatory, 
-    deliberative,
-    egalitarian,
-    
-    # Economic structure
-    manufacturing_share = manu_share,
-    services_share = service_share,
-    
-    # Trade and resources
-    trade_openness = trade_opennes,
-    exports_gdp = export,
-    imports_gdp = import,
-    fossil_rents = resource_rev
-  )
 
-cleaned_data <- cleaned_data %>% 
-  mutate(across(everything(), ~replace_na(.x, 0)))
+df <- merged_data %>%
+  mutate(across(where(is.numeric), ~replace_na(.x, 0)))
 
-write_csv(cleaned_data, "00_data/cleaned_data.csv")
+write_csv(df, "00_data/df.csv")
