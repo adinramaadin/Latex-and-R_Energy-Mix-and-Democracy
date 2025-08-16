@@ -213,6 +213,8 @@ merged_data <- merged_data %>%
 
 
 df <- merged_data %>%
-  mutate(across(where(is.numeric), ~replace_na(.x, 0)))
+  filter(year <= 2024) %>%
+  mutate(across(where(is.numeric), ~replace_na(.x, 0))) 
+  
 
 write_csv(df, "00_data/df.csv")
