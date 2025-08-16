@@ -12,6 +12,7 @@ globalmacro <- read_dta("00_data/globalmacro.dta") %>%
          code = 'ISO3',
          year,
          rgpd_pc = 'rGDP_USD',
+         population = 'pop',
          export = 'exports_GDP',
          import = 'imports_GDP',
          sovdebtcrisis = 'SovDebtCrisis',
@@ -72,7 +73,7 @@ democracy <- readRDS("00_data/vdem_r.rds") %>%
           deliberative = v2x_delibdem,
           egalitarian = v2x_egaldem
   )
-
+income_clas <- 
 
 glimpse(globalmacro)
 glimpse(energy_cons)
@@ -141,7 +142,7 @@ crisis_data <- globalmacro %>%
     debt_crisis = ifelse(!is.na(sovdebtcrisis), sovdebtcrisis, 0)
   ) %>%
   select(country, code, year, rgpd_pc, export, import, trade_opennes, 
-         any_crisis, banking_crisis, currency_crisis, debt_crisis)
+         any_crisis, banking_crisis, currency_crisis, debt_crisis, population)
 
 # 5. Sequential Left Joins (Starting with Energy as Base)
 # Start with energy data (your main dependent variable)
@@ -198,6 +199,7 @@ cleaned_data <- merged_data %>%
     # === KEY INDEPENDENT VARIABLES ===
     # Economic development
     rgpd_pc,
+    population,
     
     # Democracy measures
     electoral,
@@ -216,5 +218,8 @@ cleaned_data <- merged_data %>%
     imports_gdp = import,
     fossil_rents = resource_rev
   )
+
+cleaned_data <- cleaned_data %>% 
+  mutate(across(everything(), ~replace_na(.x, 0)))
 
 write_csv(cleaned_data, "00_data/cleaned_data.csv")
